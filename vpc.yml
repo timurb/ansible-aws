@@ -1,0 +1,52 @@
+---
+- hosts: localhost
+  connection: local
+  gather_facts: no
+  become: false
+  vars:
+    aws_region: eu-central-1
+    resource_state: present # absent doesn't work for ordering reasons
+
+  tasks:
+
+  - name: create DMZ VPC
+    ec2_vpc_net:
+      name: iamshield-DMZ
+      cidr_block: 10.1.0.0/16
+      region: "{{ aws_region }}"
+      state: "{{ resource_state }}"
+    register: vpc
+
+  - name: Internet Gateway
+    ec2_vpc_igw:
+      vpc_id: "{{ vpc.vpc.id }}"
+      region: "{{ aws_region }}"
+      state: present
+    register: igw
+
+  - name: VPC network
+    ec2_vpc_subnet:
+      cidr: 10.1.{{ item.0 }}.0/24
+      az: "{{ item.1 }}"
+      vpc_id: "{{ vpc.vpc.id }}"
+      region: "{{ aws_region }}"
+      state: "{{ resource_state }}"
+      tags: {} # crashes when no tags line is defined
+    with_indexed_items:
+      - "{{ aws_region}}a"
+      - "{{ aws_region}}b"
+      - "{{ aws_region}}c"
+
+  - name: create user-facing ELB
+    ec2_elb_lb:
+      name: ELB-user
+      region: "{{ aws_region }}"
+      zones:
+        - "{{ aws_region}}a"
+        - "{{ aws_region}}b"
+      listeners:
+        - protocol: http
+          load_balancer_port: 80
+          instance_port: 80
+      state: "{{ resource_state }}"
+      tags: {} # crashes when no tags line is defined

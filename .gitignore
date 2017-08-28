@@ -1,0 +1,5 @@
+*~
+*.swp
+
+### credentials setup using direnv
+.envrc
