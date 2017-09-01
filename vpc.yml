@@ -21,10 +21,10 @@
     ec2_vpc_igw:
       vpc_id: "{{ vpc.vpc.id }}"
       region: "{{ aws_region }}"
-      state: present
+      state: "{{ resource_state }}"
     register: igw
 
-  - name: VPC network
+  - name: DMZ VPC network
     ec2_vpc_subnet:
       cidr: 10.1.{{ item.0 }}.0/24
       az: "{{ item.1 }}"
@@ -36,17 +36,86 @@
       - "{{ aws_region}}a"
       - "{{ aws_region}}b"
       - "{{ aws_region}}c"
+    register: subnets_dmz
+
+  - name: Secure VPC network
+    ec2_vpc_subnet:
+      cidr: 10.1.{{ item.0 + 100 }}.0/24
+      az: "{{ item.1 }}"
+      vpc_id: "{{ vpc.vpc.id }}"
+      region: "{{ aws_region }}"
+      state: "{{ resource_state }}"
+      tags: {} # crashes when no tags line is defined
+    with_indexed_items:
+      - "{{ aws_region}}a"
+      - "{{ aws_region}}b"
+      - "{{ aws_region}}c"
+    register: subnets_secure
 
   - name: create user-facing ELB
     ec2_elb_lb:
-      name: ELB-user
+      name: ELB-DMZ
       region: "{{ aws_region }}"
-      zones:
-        - "{{ aws_region}}a"
-        - "{{ aws_region}}b"
+      subnets:
+        - "{{ subnets_dmz.results[0].subnet.id }}"
+        - "{{ subnets_dmz.results[1].subnet.id }}"
+        - "{{ subnets_dmz.results[2].subnet.id }}"
       listeners:
         - protocol: http
           load_balancer_port: 80
           instance_port: 80
       state: "{{ resource_state }}"
       tags: {} # crashes when no tags line is defined
+
+  - name: create secure ELB
+    ec2_elb_lb:
+      name: ELB-secure
+      region: "{{ aws_region }}"
+      subnets:
+        - "{{ subnets_secure.results[0].subnet.id }}"
+        - "{{ subnets_secure.results[1].subnet.id }}"
+        - "{{ subnets_secure.results[2].subnet.id }}"
+      listeners:
+        - protocol: http
+          load_balancer_port: 80
+          instance_port: 80
+      state: "{{ resource_state }}"
+      tags: {} # crashes when no tags line is defined
+
+  - name: Create proxy instance
+    ec2:
+      group: default
+      image: ami-657bd20a
+      instance_type: t2.nano
+      vpc_subnet_id: "{{ subnets_dmz.results[0].subnet.id }}"
+      region: "{{ aws_region }}"
+      state: "{{ resource_state }}"
+    register: proxy_instance
+
+  - name: Create IAM instance
+    ec2:
+      group: default
+      image: ami-657bd20a
+      instance_type: t2.nano
+      vpc_subnet_id: "{{ subnets_dmz.results[0].subnet.id }}"
+      region: "{{ aws_region }}"
+      state: "{{ resource_state }}"
+    register: iam_instance
+
+  - name: Attach proxy instance to ELB
+    ec2_elb:
+      ec2_elbs:
+        - 'ELB-DMZ'
+      instance_id: "{{ proxy_instance.instance_ids[0] }}"
+      region: "{{ aws_region }}"
+      state: "{{ resource_state }}"
+      wait: no
+
+  - name: Attach IAM instance to ELB
+    ec2_elb:
+      ec2_elbs:
+        - 'ELB-secure'
+      instance_id: "{{ iam_instance.instance_ids[0] }}"
+      region: "{{ aws_region }}"
+      state: "{{ resource_state }}"
+      wait: no
