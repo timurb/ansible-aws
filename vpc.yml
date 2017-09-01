@@ -85,7 +85,7 @@
   - name: Create proxy instance
     ec2:
       group: default
-      image: ami-657bd20a
+      image: ami-657bd20a # amazon linux to start with, to be replaced to ubuntu or something
       instance_type: t2.nano
       vpc_subnet_id: "{{ subnets_dmz.results[0].subnet.id }}"
       region: "{{ aws_region }}"
@@ -95,9 +95,9 @@
   - name: Create IAM instance
     ec2:
       group: default
-      image: ami-657bd20a
+      image: ami-657bd20a # amazon linux to start with, to be replaced to ubuntu or something
       instance_type: t2.nano
-      vpc_subnet_id: "{{ subnets_dmz.results[0].subnet.id }}"
+      vpc_subnet_id: "{{ subnets_secure.results[0].subnet.id }}"
       region: "{{ aws_region }}"
       state: "{{ resource_state }}"
     register: iam_instance
